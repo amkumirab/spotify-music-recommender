@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.streamlit/secrets.toml
+
+# Keep the reproducible sample, ignore the full Kaggle download.
+data/raw/*
+!data/raw/.gitkeep
+data/*.zip
