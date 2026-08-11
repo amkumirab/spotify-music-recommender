@@ -6,16 +6,18 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 A portfolio-ready, content-based music recommendation system trained on 114K
-Spotify tracks. Pick a song and the app finds tracks with a similar musical
-profile using audio features, genre information, and cosine similarity.
+Spotify tracks. Blend up to five songs into a taste profile and build a diverse
+playlist using audio features, genre information, and cosine similarity.
 
 > This is an educational project. It is not affiliated with or endorsed by Spotify.
 
 ## Highlights
 
 - Content-based recommendation with explainable results
+- Multi-track taste profiles built from one to five seed songs
 - Nine audio signals: energy, valence, danceability, tempo, acousticness, and more
-- Optional popularity reranking and same-genre filtering
+- Maximum Marginal Relevance (MMR) diversity and per-artist limits
+- Optional popularity reranking and selected-genre filtering
 - Fast interactive Streamlit interface with Spotify deep links
 - Reproducible public Kaggle dataset download
 - Unit tests, linting, coverage, and GitHub Actions CI
@@ -30,14 +32,18 @@ flowchart LR
     B --> D[One-hot encode genre]
     C --> E[Feature matrix]
     D --> E
-    E --> F[Cosine nearest neighbours]
+    I[One to five seed tracks] --> J[Average taste profile]
+    E --> J
+    J --> F[Cosine nearest neighbours]
     F --> G[Popularity reranking]
-    G --> H[Recommendations + explanations]
+    G --> K[MMR diversity + artist cap]
+    K --> H[Playlist + explanations]
 ```
 
 The recommender is deliberately content-based: it does not require user history.
-This makes the system useful for new users and new tracks, while keeping every
-recommendation explainable.
+It averages the selected tracks into a single audio-and-genre profile, retrieves
+the closest candidates, and applies MMR so the final playlist stays relevant
+without becoming repetitive. This also keeps every recommendation explainable.
 
 ## Run locally
 
@@ -79,9 +85,10 @@ Start the application:
 python -m streamlit run app.py
 ```
 
-Open `http://localhost:8501`, search for a track or artist, choose a seed track,
-and generate recommendations. Downloading the complete dataset gives the best
-results; otherwise the app automatically uses the repository sample.
+Open `http://localhost:8501`, search for tracks or artists, add one to five seed
+tracks, adjust popularity and diversity, and build the playlist. Downloading the
+complete dataset gives the best results; otherwise the app automatically uses the
+repository sample.
 
 ## Dataset
 
@@ -123,10 +130,9 @@ pull request.
 
 ## Roadmap
 
-- Combine several seed tracks into a playlist profile
 - Add offline evaluation with Precision@K and diversity metrics
 - Learn feature weights from likes/dislikes
-- Add Spotify OAuth for playlist export
+- Add Spotify OAuth and export generated playlists
 - Package the model behind a FastAPI service
 
 ## License
