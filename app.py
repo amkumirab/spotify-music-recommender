@@ -8,6 +8,7 @@ from pathlib import Path
 import streamlit as st
 
 from spotify_recommender.data import display_label, find_tracks, load_tracks
+from spotify_recommender.export import build_playlist_export
 from spotify_recommender.model import ContentBasedRecommender
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -161,6 +162,15 @@ with results_column:
         )
         if recommendations.empty:
             st.info("No tracks matched these filters. Turn off the genre filter and try again.")
+        else:
+            playlist_export = build_playlist_export(recommendations)
+            st.download_button(
+                "Download playlist as CSV",
+                data=playlist_export.to_csv(index=False).encode("utf-8-sig"),
+                file_name="spotify_playlist.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
         for rank, row in recommendations.iterrows():
             spotify_url = f"https://open.spotify.com/track/{row['track_id']}"
             track_name = escape(str(row["track_name"]))

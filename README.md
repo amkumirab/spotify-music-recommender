@@ -19,6 +19,7 @@ playlist using audio features, genre information, and cosine similarity.
 - Maximum Marginal Relevance (MMR) diversity and per-artist limits
 - Optional popularity reranking and selected-genre filtering
 - Fast interactive Streamlit interface with Spotify deep links
+- Downloadable CSV playlists with ranking, match scores, and Spotify links
 - Reproducible public Kaggle dataset download
 - Unit tests, linting, coverage, and GitHub Actions CI
 - Full dataset fallback to a small repository sample
@@ -88,7 +89,8 @@ python -m streamlit run app.py
 Open `http://localhost:8501`, search for tracks or artists, add one to five seed
 tracks, adjust popularity and diversity, and build the playlist. Downloading the
 complete dataset gives the best results; otherwise the app automatically uses the
-repository sample.
+repository sample. Use **Download playlist as CSV** to save the ranked results in
+a spreadsheet-friendly format.
 
 ## Dataset
 
@@ -112,6 +114,7 @@ spotify-music-recommender/
 ├── scripts/download_data.py
 ├── src/spotify_recommender/
 │   ├── data.py                 # validation, cleaning, search
+│   ├── export.py               # spreadsheet-friendly playlist export
 │   └── model.py                # features, similarity, ranking
 ├── tests/
 ├── app.py
