@@ -20,6 +20,7 @@ playlist using audio features, genre information, and cosine similarity.
 - Optional popularity reranking and selected-genre filtering
 - Fast interactive Streamlit interface with Spotify deep links
 - Downloadable CSV playlists with ranking, match scores, and Spotify links
+- Reproducible offline evaluation for relevance, diversity, and catalog coverage
 - Reproducible public Kaggle dataset download
 - Unit tests, linting, coverage, and GitHub Actions CI
 - Full dataset fallback to a small repository sample
@@ -92,6 +93,34 @@ complete dataset gives the best results; otherwise the app automatically uses th
 repository sample. Use **Download playlist as CSV** to save the ranked results in
 a spreadsheet-friendly format.
 
+## Evaluate recommendation quality
+
+Run the offline benchmark against 25 reproducibly sampled seed tracks:
+
+```bash
+python scripts/evaluate_model.py
+```
+
+Use the repository sample or save a machine-readable report when needed:
+
+```bash
+python scripts/evaluate_model.py \
+  --dataset data/sample/spotify_tracks_sample.csv \
+  --sample-size 20 \
+  --recommendations 10 \
+  --output reports/evaluation.json
+```
+
+The report contains four complementary quality signals:
+
+- **Mean profile match:** average cosine similarity between seeds and results
+- **Artist diversity:** average share of unique primary artists in each playlist
+- **Genre diversity:** average share of unique genres in each playlist
+- **Catalog coverage:** share of the catalog reached across all evaluated playlists
+
+All ratio metrics range from `0.0` to `1.0`. The random state and ranking settings
+are included in the JSON output so benchmark runs can be reproduced exactly.
+
 ## Dataset
 
 The project uses the
@@ -112,8 +141,10 @@ spotify-music-recommender/
 │   ├── sample/                 # small reproducible demo data
 │   └── DATASET.md
 ├── scripts/download_data.py
+├── scripts/evaluate_model.py
 ├── src/spotify_recommender/
 │   ├── data.py                 # validation, cleaning, search
+│   ├── evaluation.py           # offline recommendation quality metrics
 │   ├── export.py               # spreadsheet-friendly playlist export
 │   └── model.py                # features, similarity, ranking
 ├── tests/
@@ -133,7 +164,6 @@ pull request.
 
 ## Roadmap
 
-- Add offline evaluation with Precision@K and diversity metrics
 - Learn feature weights from likes/dislikes
 - Add Spotify OAuth and export generated playlists
 - Package the model behind a FastAPI service
