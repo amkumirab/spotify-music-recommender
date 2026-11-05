@@ -4,9 +4,16 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -19,3 +26,5 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest --cov=spotify_recommender --cov-report=term-missing
+      - name: Check dependencies
+        run: python -m pip check
