@@ -1,0 +1,16 @@
+{
+  "built_at": "2026-11-05T10:55:07.694502+00:00",
+  "tracks": 114206,
+  "chart_source": "https://www.kaggle.com/datasets/asaniczka/top-spotify-songs-in-73-countries-daily-updated",
+  "chart_version": 608,
+  "chart_archive_sha256": "e048c4726c7ffb0c4e50827b459b760e98561f07202d6efb586f69fc962902ef",
+  "latest_chart_observation": "2025-06-11",
+  "latest_release_year_with_audio": 2025,
+  "chart_tracks_with_complete_audio": 24975,
+  "base_unique_tracks": 89740,
+  "licenses": [
+    "CC0 (base)",
+    "ODC-By (chart snapshot; Asaniczka)"
+  ],
+  "notes": "Not live data. New chart tracks missing audio features are excluded."
+}
