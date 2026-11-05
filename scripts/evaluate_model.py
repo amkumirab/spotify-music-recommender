@@ -12,6 +12,7 @@ from spotify_recommender.model import ContentBasedRecommender
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FULL_DATASET = PROJECT_ROOT / "data" / "raw" / "spotify-tracks-dataset-detailed.csv"
+UPDATED_DATASET = PROJECT_ROOT / "data" / "raw" / "spotify_catalog.csv"
 SAMPLE_DATASET = PROJECT_ROOT / "data" / "sample" / "spotify_tracks_sample.csv"
 
 
@@ -43,7 +44,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    dataset_path = args.dataset or (FULL_DATASET if FULL_DATASET.exists() else SAMPLE_DATASET)
+    dataset_path = args.dataset or next(
+        path for path in (UPDATED_DATASET, FULL_DATASET, SAMPLE_DATASET) if path.exists()
+    )
     tracks = load_tracks(dataset_path)
     sample_size = min(args.sample_size, len(tracks))
     seed_track_ids = (
