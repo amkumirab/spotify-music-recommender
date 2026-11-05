@@ -10,8 +10,18 @@ dist/
 .coverage
 htmlcov/
 .streamlit/secrets.toml
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.db
+*.sqlite
+*.sqlite3
+reports/
 
 # Keep the reproducible sample, ignore the full Kaggle download.
 data/raw/*
 !data/raw/.gitkeep
 data/*.zip
+data/local/
