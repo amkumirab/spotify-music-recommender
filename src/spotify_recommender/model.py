@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -22,6 +22,7 @@ AUDIO_FEATURES = [
     "valence",
     "tempo",
 ]
+UNKNOWN_GENRES = {"unclassified", "unknown", ""}
 
 FEATURE_LABELS = {
     "danceability": "danceability",
@@ -69,13 +70,12 @@ class ContentBasedRecommender:
         self.tracks = tracks.reset_index(drop=True).copy()
         audio = sparse.csr_matrix(self.scaler.fit_transform(self.tracks[AUDIO_FEATURES]))
         genre = self.genre_encoder.fit_transform(self.tracks[["track_genre"]])
-        self.matrix = sparse.hstack(
-            [audio, genre.multiply(self.genre_weight)], format="csr"
-        )
+        known_genre = ~self.tracks["track_genre"].isin(UNKNOWN_GENRES)
+        genre = genre.multiply(known_genre.to_numpy()[:, None])
+        self.matrix = sparse.hstack([audio, genre.multiply(self.genre_weight)], format="csr")
         self.neighbors.fit(self.matrix)
         self._track_positions = {
-            str(track_id): position
-            for position, track_id in enumerate(self.tracks["track_id"])
+            str(track_id): position for position, track_id in enumerate(self.tracks["track_id"])
         }
         return self
 
@@ -106,6 +106,10 @@ class ContentBasedRecommender:
         same_genre_only: bool = False,
         diversity: float = 0.25,
         max_tracks_per_artist: int | None = 2,
+        *,
+        audio_ranges: Mapping[str, tuple[float, float]] | None = None,
+        excluded_track_ids: Sequence[str] = (),
+        minimum_release_year: int | None = None,
     ) -> pd.DataFrame:
         """Recommend from a combined profile of one or more seed tracks.
 
@@ -122,9 +126,7 @@ class ContentBasedRecommender:
             raise ValueError("Select at least one seed track")
 
         unknown = [
-            track_id
-            for track_id in unique_track_ids
-            if track_id not in self._track_positions
+            track_id for track_id in unique_track_ids if track_id not in self._track_positions
         ]
         if unknown:
             raise KeyError(f"Unknown track_id: {unknown[0]}")
@@ -136,34 +138,49 @@ class ContentBasedRecommender:
             raise ValueError("diversity must be between 0 and 1")
         if max_tracks_per_artist is not None and max_tracks_per_artist < 1:
             raise ValueError("max_tracks_per_artist must be at least 1")
+        if isinstance(excluded_track_ids, str):
+            raise TypeError("excluded_track_ids must be a sequence, not a string")
 
         source_positions = [self._track_positions[track_id] for track_id in unique_track_ids]
         sources = self.tracks.iloc[source_positions]
         profile = sparse.csr_matrix(self.matrix[source_positions].mean(axis=0))
-        pool_size = min(len(self.tracks), max(200, n_recommendations * 30))
-        distances, positions = self.neighbors.kneighbors(
-            profile, n_neighbors=pool_size
-        )
-
-        candidates = self.tracks.iloc[positions[0]].copy()
-        candidates["_matrix_position"] = candidates.index.astype(int)
-        candidates["similarity"] = 1 - distances[0]
-        candidates = candidates[~candidates["track_id"].isin(unique_track_ids)]
+        eligible = ~self.tracks["track_id"].isin([*unique_track_ids, *excluded_track_ids])
+        if minimum_release_year is not None:
+            years = pd.to_numeric(
+                self.tracks.get("release_year", pd.Series(index=self.tracks.index, dtype=float)),
+                errors="coerce",
+            )
+            eligible &= years.ge(minimum_release_year)
         if same_genre_only:
-            source_genres = set(sources["track_genre"])
-            candidates = candidates[candidates["track_genre"].isin(source_genres)]
+            eligible &= self.tracks["track_genre"].isin(
+                set(sources["track_genre"]) - UNKNOWN_GENRES
+            )
+        for feature, bounds in (audio_ranges or {}).items():
+            if feature not in {"energy", "valence", "tempo"}:
+                raise ValueError(f"Unsupported audio range: {feature}")
+            low, high = bounds
+            ceiling = 400 if feature == "tempo" else 1
+            if not np.isfinite([low, high]).all() or not 0 <= low <= high <= ceiling:
+                raise ValueError(f"Invalid range for {feature}: {bounds}")
+            eligible &= self.tracks[feature].between(low, high)
+        eligible_positions = np.flatnonzero(eligible.to_numpy())
+        similarities = (
+            cosine_similarity(profile, self.matrix[eligible_positions]).ravel()
+            if len(eligible_positions)
+            else np.array([])
+        )
+        pool_size = min(len(eligible_positions), max(200, n_recommendations * 30))
+        order = np.argsort(-similarities, kind="stable")[:pool_size]
+        candidates = self.tracks.iloc[eligible_positions[order]].copy()
+        candidates["_matrix_position"] = candidates.index.astype(int)
+        candidates["similarity"] = similarities[order]
 
         popularity = candidates["popularity"].clip(0, 100) / 100
-        candidates["score"] = (
-            (1 - popularity_bias) * candidates["similarity"]
-            + popularity_bias * popularity
-        )
-        candidates["reason"] = candidates.apply(
-            lambda candidate: self._explain_sources(sources, candidate), axis=1
-        )
-        candidates = (
-            candidates.sort_values("score", ascending=False)
-            .drop_duplicates(subset=["track_name", "artists"], keep="first")
+        candidates["score"] = (1 - popularity_bias) * candidates[
+            "similarity"
+        ] + popularity_bias * popularity
+        candidates = candidates.sort_values("score", ascending=False).drop_duplicates(
+            subset=["track_name", "artists"], keep="first"
         )
         candidates = self._select_diverse(
             candidates,
@@ -172,6 +189,9 @@ class ContentBasedRecommender:
             max_tracks_per_artist=max_tracks_per_artist,
         )
         candidates["similarity"] = candidates["similarity"].clip(0, 1)
+        candidates["reason"] = [
+            self._explain_sources(sources, row) for _, row in candidates.iterrows()
+        ]
 
         columns = [
             "track_id",
@@ -251,20 +271,21 @@ class ContentBasedRecommender:
         closest_source = sources.iloc[closest_source_index]
         closest_features = np.argsort(differences[closest_source_index])[:2]
         reasons = [FEATURE_LABELS[AUDIO_FEATURES[index]] for index in closest_features]
-        if candidate["track_genre"] in set(sources["track_genre"]):
+        if candidate["track_genre"] in set(sources["track_genre"]) - UNKNOWN_GENRES:
             reasons.insert(0, f"selected {candidate['track_genre']} genre")
         return f"Matches {closest_source['track_name']} on " + ", ".join(reasons)
 
     def _explain(self, source: pd.Series, candidate: pd.Series) -> str:
-        source_values = self.scaler.transform(
-            pd.DataFrame([source[AUDIO_FEATURES].to_dict()])
-        )[0]
+        source_values = self.scaler.transform(pd.DataFrame([source[AUDIO_FEATURES].to_dict()]))[0]
         candidate_values = self.scaler.transform(
             pd.DataFrame([candidate[AUDIO_FEATURES].to_dict()])
         )[0]
         differences = np.abs(source_values - candidate_values)
         closest = np.argsort(differences)[:2]
         reasons = [FEATURE_LABELS[AUDIO_FEATURES[index]] for index in closest]
-        if source["track_genre"] == candidate["track_genre"]:
+        if (
+            source["track_genre"] == candidate["track_genre"]
+            and source["track_genre"] not in UNKNOWN_GENRES
+        ):
             reasons.insert(0, f"same {source['track_genre']} genre")
         return "Similar " + ", ".join(reasons)
