@@ -2,61 +2,59 @@
 
 from __future__ import annotations
 
-from html import escape
+import os
 from pathlib import Path
 
 import streamlit as st
 
-from spotify_recommender.data import display_label, find_tracks, load_tracks
-from spotify_recommender.export import build_playlist_export
+from spotify_recommender.account_ui import render_account
+from spotify_recommender.data import load_tracks
 from spotify_recommender.model import ContentBasedRecommender
+from spotify_recommender.profile_ui import render_manual_profile
+from spotify_recommender.studio import render_library, render_playlist
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 FULL_DATASET = PROJECT_ROOT / "data" / "raw" / "spotify-tracks-dataset-detailed.csv"
+UPDATED_DATASET = PROJECT_ROOT / "data" / "raw" / "spotify_catalog.csv"
 SAMPLE_DATASET = PROJECT_ROOT / "data" / "sample" / "spotify_tracks_sample.csv"
 MAX_SEED_TRACKS = 5
 
 
 def dataset_path() -> Path:
+    if os.environ.get("SPOTIFY_DATASET"):
+        return Path(os.environ["SPOTIFY_DATASET"])
+    if UPDATED_DATASET.exists():
+        return UPDATED_DATASET
     return FULL_DATASET if FULL_DATASET.exists() else SAMPLE_DATASET
 
 
 @st.cache_data(show_spinner=False)
-def get_tracks(path: str):
+def get_tracks(path: str, revision: int):
     return load_tracks(path)
 
 
 @st.cache_resource(show_spinner="Learning the sound of every track…")
-def get_model(path: str) -> ContentBasedRecommender:
-    tracks = get_tracks(path)
+def get_model(path: str, revision: int) -> ContentBasedRecommender:
+    """Fit the catalog with no shared genre signal for unclassified tracks."""
+    tracks = get_tracks(path, revision)
     return ContentBasedRecommender().fit(tracks)
 
 
 st.set_page_config(page_title="Spotify Music Recommender", page_icon="🎧", layout="wide")
-st.markdown(
-    """
-    <style>
-    .stApp { background: linear-gradient(145deg, #0b0f0d 0%, #121212 55%, #0e2618 100%); }
-    [data-testid="stMetric"] { background: #181818; padding: 1rem; border-radius: 14px; }
-    .track-card { background:#181818; border:1px solid #2c2c2c; border-radius:16px;
-                  padding:1rem 1.1rem; margin:.55rem 0; }
-    .track-card:hover { border-color:#1DB954; }
-    .score { color:#1DB954; font-weight:700; }
-    .muted { color:#b3b3b3; }
-    a { color:#1DB954 !important; text-decoration:none; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 path = dataset_path()
-tracks = get_tracks(str(path))
-model = get_model(str(path))
+revision = path.stat().st_mtime_ns
+tracks = get_tracks(str(path), revision)
+model = get_model(str(path), revision)
 
-st.title("🎧 Spotify Music Recommender")
-st.caption(
-    "Blend up to five songs into one taste profile, then discover a diverse playlist."
-)
+st.title("🎧 Playlist Studio")
+st.caption("Your taste. Songs you haven't saved yet. Discover your next favourites.")
+st.caption("Offline audio catalog + optional read-only Spotify Liked Songs connection.")
+if path in (UPDATED_DATASET, SAMPLE_DATASET):
+    st.caption(
+        "Catalog snapshot: 11 June 2025 · includes 2025 releases · "
+        + ("demo sample" if path == SAMPLE_DATASET else "full merged catalog")
+    )
 
 metric_a, metric_b, metric_c = st.columns(3)
 metric_a.metric("Tracks", f"{len(tracks):,}")
@@ -64,62 +62,36 @@ metric_b.metric("Artists", f"{tracks['artists'].nunique():,}")
 metric_c.metric("Genres", f"{tracks['track_genre'].nunique():,}")
 
 st.divider()
+for key, default in {
+    "playlist": None,
+    "playlist_settings": {},
+    "excluded_track_ids": [],
+    "seed_track_ids": [],
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
+render_account(tracks)
 controls, results_column = st.columns([1, 2], gap="large")
 
 with controls:
     st.subheader("Build your taste profile")
-    query = st.text_input("Search by song or artist", placeholder="Try: Coldplay")
-    matches = find_tracks(tracks, query, limit=30)
+    source = st.radio(
+        "Build from",
+        ["Selected tracks", "My imported likes"],
+        key="profile_source",
+        horizontal=True,
+    )
+    report = st.session_state.get("library_report", {})
+    if source == "My imported likes" and not report.get("seed_ids"):
+        st.info("Connect and sync Spotify, paste track links, or try the demo in the sidebar.")
+    elif source == "My imported likes":
+        st.caption(
+            "New to your library, not necessarily newly released. Your existing likes are excluded."
+        )
+    if source == "Selected tracks":
+        render_manual_profile(tracks, MAX_SEED_TRACKS)
 
-    if "seed_track_ids" not in st.session_state:
-        st.session_state.seed_track_ids = []
-
-    selected_id: str | None = None
-    if matches.empty:
-        st.warning("No matching tracks. Try another title or artist.")
-    else:
-        label_to_id = {
-            f"{display_label(row)} · {row['track_id'][-5:]}": str(row["track_id"])
-            for _, row in matches.iterrows()
-        }
-        selected_label = st.selectbox("Track", options=list(label_to_id))
-        selected_id = label_to_id[selected_label]
-
-    add_column, clear_column = st.columns(2)
-    if add_column.button(
-        "Add to profile",
-        use_container_width=True,
-        disabled=selected_id is None,
-    ):
-        if selected_id in st.session_state.seed_track_ids:
-            st.toast("This track is already in your profile.")
-        elif len(st.session_state.seed_track_ids) >= MAX_SEED_TRACKS:
-            st.warning(f"Choose up to {MAX_SEED_TRACKS} seed tracks.")
-        else:
-            st.session_state.seed_track_ids.append(selected_id)
-            st.rerun()
-
-    if clear_column.button(
-        "Clear profile",
-        use_container_width=True,
-        disabled=not st.session_state.seed_track_ids,
-    ):
-        st.session_state.seed_track_ids = []
-        st.rerun()
-
-    st.markdown(f"**Selected tracks ({len(st.session_state.seed_track_ids)}/{MAX_SEED_TRACKS})**")
-    if not st.session_state.seed_track_ids:
-        st.info("Add one to five tracks to create your playlist profile.")
-    else:
-        for seed_id in list(st.session_state.seed_track_ids):
-            seed = tracks.loc[tracks["track_id"].eq(seed_id)].iloc[0]
-            label_column, remove_column = st.columns([5, 1])
-            label_column.caption(display_label(seed))
-            if remove_column.button("×", key=f"remove-{seed_id}", help="Remove track"):
-                st.session_state.seed_track_ids.remove(seed_id)
-                st.rerun()
-
-    count = st.slider("Number of recommendations", 5, 20, 10)
+    count = st.slider("Number of recommendations", 5, 30, 10)
     popularity_bias = st.slider(
         "Popularity boost",
         min_value=0.0,
@@ -142,56 +114,69 @@ with controls:
         value=2,
     )
     same_genre = st.checkbox("Stay in the selected genres")
+    minimum_year = None
+    if "release_year" in tracks and tracks["release_year"].notna().any():
+        if st.checkbox("Only recent releases", key="recent_only"):
+            minimum_year = st.slider("Released since", 2020, 2025, 2023)
+            st.caption("Only songs with a known release year qualify. Coverage ends in 2025.")
+    audio_ranges = {}
+    with st.expander("Shape the sound"):
+        if st.checkbox("Use audio filters", key="use_audio_filters"):
+            audio_ranges = {
+                "energy": st.slider("Energy range", 0.0, 1.0, (0.0, 1.0), step=0.05),
+                "valence": st.slider("Mood range", 0.0, 1.0, (0.0, 1.0), step=0.05),
+                "tempo": st.slider("Tempo range (BPM)", 0, 400, (0, 400), step=5),
+            }
+            st.caption("Low valence is more somber; high valence is more upbeat.")
+    if st.session_state.excluded_track_ids:
+        st.caption(f"Hidden tracks: {len(st.session_state.excluded_track_ids)}")
+        if st.button("Restore hidden tracks", key="restore_hidden"):
+            st.session_state.excluded_track_ids = []
+            st.rerun()
+    active_seeds = (
+        report.get("seed_ids", [])
+        if source == "My imported likes"
+        else st.session_state.seed_track_ids
+    )
     recommend = st.button(
-        "Build my playlist",
+        "Discover new favourites" if source == "My imported likes" else "Build my playlist",
+        key="build_playlist",
         type="primary",
         use_container_width=True,
-        disabled=not st.session_state.seed_track_ids,
+        disabled=not active_seeds,
     )
 
+settings = {
+    "seeds": list(active_seeds),
+    "source": source,
+    "minimum_release_year": minimum_year,
+    "count": count,
+    "popularity_bias": popularity_bias,
+    "diversity": diversity,
+    "max_tracks_per_artist": max_tracks_per_artist,
+    "same_genre": same_genre,
+    "audio_ranges": {key: list(value) for key, value in audio_ranges.items()},
+}
 with results_column:
     st.subheader("Your playlist")
     if recommend:
-        recommendations = model.recommend_from_tracks(
-            st.session_state.seed_track_ids,
+        st.session_state.playlist = model.recommend_from_tracks(
+            active_seeds,
             n_recommendations=count,
             popularity_bias=popularity_bias,
             same_genre_only=same_genre,
             diversity=diversity,
             max_tracks_per_artist=max_tracks_per_artist,
+            audio_ranges=audio_ranges,
+            excluded_track_ids=[
+                *st.session_state.excluded_track_ids,
+                *report.get("excluded_ids", []),
+            ],
+            minimum_release_year=minimum_year,
         )
-        if recommendations.empty:
-            st.info("No tracks matched these filters. Turn off the genre filter and try again.")
-        else:
-            playlist_export = build_playlist_export(recommendations)
-            st.download_button(
-                "Download playlist as CSV",
-                data=playlist_export.to_csv(index=False).encode("utf-8-sig"),
-                file_name="spotify_playlist.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
-        for rank, row in recommendations.iterrows():
-            spotify_url = f"https://open.spotify.com/track/{row['track_id']}"
-            track_name = escape(str(row["track_name"]))
-            artists = escape(str(row["artists"]))
-            genre = escape(str(row["track_genre"]))
-            reason = escape(str(row["reason"]))
-            st.markdown(
-                f"""
-                <div class="track-card">
-                  <div><strong>{rank + 1}. {track_name}</strong></div>
-                  <div class="muted">{artists} · {genre}</div>
-                  <div><span class="score">{row['similarity']:.0%} profile match</span>
-                       · popularity {int(row['popularity'])}/100</div>
-                  <div class="muted">{reason}</div>
-                  <a href="{spotify_url}" target="_blank">Open in Spotify ↗</a>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    else:
-        st.info("Add a few tracks, adjust the controls, then build your playlist.")
+        st.session_state.playlist_settings = settings
+    render_playlist(tracks, settings)
+    render_library(os.environ.get("SPOTIFY_LIBRARY", str(PROJECT_ROOT / "data/local/library.db")))
 
 with st.expander("How does it work?"):
     st.write(
@@ -200,4 +185,4 @@ with st.expander("How does it work?"):
         "popularity boost, and uses Maximum Marginal Relevance to keep the playlist diverse. "
         "Every result includes a short explanation."
     )
-    st.caption(f"Using: {path.relative_to(PROJECT_ROOT)}")
+    st.caption(f"Using: {path.name}")
