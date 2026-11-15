@@ -1,8 +1,8 @@
 # Connect Liked Songs
 
 The account connection uses Spotify Authorization Code with PKCE. It reads your
-library; it never asks for your Spotify password or a Client Secret and cannot
-modify your saved music or playlists.
+library by default; it never asks for your Spotify password or a Client Secret.
+Optional private playlist saving requires separate permission and explicit confirmation.
 
 ## One-time setup
 
@@ -20,6 +20,26 @@ modify your saved music or playlists.
    the read-only library scope on Spotify's own page.
 7. When the callback page says to return, go back and click **Finish connection**.
 8. Click **Sync Liked Songs**, then **Discover new favourites**.
+
+## Optional private playlist saving
+
+Leave **Allow saving private playlists** unchecked for read-only access. To save
+recommendations directly, check it before connecting, or choose **Enable private
+playlist saving** on an existing connection. Complete sign-in again and click
+**Finish connection**. This requests `playlist-modify-private` in addition to
+`user-library-read`; no public-playlist permission is requested.
+
+Build recommendations, enter a playlist name, review the tracks under **Save to
+Spotify**, and confirm creation. Only clicking **Save private playlist to Spotify**
+writes to your account. The new playlist is private and follows the displayed order.
+Liked Songs and existing playlists are not modified.
+
+The integration uses Spotify's [Create Playlist](https://developer.spotify.com/documentation/web-api/reference/create-playlist)
+and [Add Items](https://developer.spotify.com/documentation/web-api/reference/add-items-to-playlist)
+endpoints. At most 100 unique tracks are sent in one batch. Repeated clicks reuse
+the saved result within the same connection. If the result is uncertain, check
+Spotify manually before reconnecting or trying a different name. Automatic retries
+could create an empty/duplicate playlist or add tracks twice, so writes are not retried.
 
 Both the Streamlit app and the authorization browser must run on the same
 computer. Port 8000 must be free. A sign-in attempt expires after five minutes;
@@ -61,6 +81,6 @@ the app at Spotify; revoke it from your Spotify account's Apps page if desired.
 It is not a simulated connected account. Screenshots in this repository use only
 that demo and contain no personal listening history or credentials.
 
-Export the result as CSV or a Spotify URI list. Individual Spotify links open the
-actual tracks. Bulk URI paste varies by Spotify Desktop version, so automatic
-account-side playlist creation is not claimed.
+CSV and Spotify URI downloads remain available without write permission.
+Individual Spotify links open the actual tracks. Bulk URI paste varies by Spotify
+Desktop version; the optional private export avoids that manual step.

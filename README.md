@@ -26,12 +26,13 @@ Actual app screenshots using a public demo taste, not a personal Spotify account
 1. Follow the [one-time Spotify connection setup](docs/spotify-setup.md).
 2. Connect in the sidebar and click **Sync Liked Songs**.
 3. Review how many likes matched the audio catalog, then click **Discover new favourites**.
-4. Open suggested tracks in Spotify, hide misses, and save the result locally or
-   export it as CSV / Spotify URI text.
+4. Open suggested tracks in Spotify, hide misses, and save the result locally,
+   download CSV / Spotify URI text, or **Save to Spotify** as a private playlist.
 
-The connection requests only `user-library-read`. Tokens stay in memory and no
-Client Secret is required. Imported likes and their known recording variants are
-excluded from discovery. Up to 50 recent matched likes shape your taste profile;
+The connection requests `user-library-read` by default. **Allow saving private
+playlists** adds the optional `playlist-modify-private` permission. Tokens stay
+in memory and no Client Secret is required. Imported likes and their known recording
+variants are excluded from discovery. Up to 50 recent matched likes shape your taste profile;
 unmatched songs are reported rather than assigned invented audio features.
 See the [local data and privacy guide](docs/privacy.md) for storage, disconnection
 and safe screenshot sharing.
@@ -48,7 +49,8 @@ is visibly labeled and never claims to be connected to your account.
 ## Highlights
 
 - Content-based recommendation with explainable results
-- Read-only Spotify account connection with PKCE, library pagination and token refresh
+- Read-only-by-default Spotify connection with PKCE, library pagination and token refresh
+- Opt-in private Spotify playlist saving with preview, confirmation and duplicate protection
 - Discovery that excludes all imported likes and known alternate recording IDs
 - Match coverage report, explicit unmatched songs and recent-release filtering
 - Multi-track taste profiles built from one to five seed songs
@@ -165,6 +167,27 @@ saved playlists are shared by users of the same running installation. A hosted
 multi-user deployment needs authentication and isolated user storage first.
 Saving locally does not create playlists in a Spotify account.
 
+### Save directly to Spotify
+
+1. In the sidebar, choose **Allow saving private playlists** before connecting.
+   Already connected read-only? Click **Enable private playlist saving**, sign in
+   again and click **Finish connection**. Your current recommendations stay visible.
+2. Build a playlist, enter its name, and review **Save to Spotify**.
+3. Check **Create this private playlist in my Spotify account**, then click
+   **Save private playlist to Spotify**. Open the returned playlist link.
+
+The app creates a new **private** playlist with the displayed track order. It does
+not change your Liked Songs or existing playlists. Each export supports up to 100
+unique tracks (the generator currently produces at most 30).
+
+Repeated saves of the same trimmed name and ordered tracks reuse the result for
+the current connection. Writes are never automatically retried: a network failure
+may mean Spotify accepted a request without returning its response. If the outcome
+is uncertain, check Spotify manually; the app keeps the playlist link when known.
+Reconnecting or restarting clears this in-memory protection, so check before
+trying the same export again. Changing the name or tracks requires fresh confirmation.
+See [private export behavior](docs/spotify-export.md) for acceptance criteria and failure semantics.
+
 Optional environment variables: `SPOTIFY_CLIENT_ID` supplies your public Spotify
 app Client ID. `SPOTIFY_DATASET` selects a different dataset
 CSV, and `SPOTIFY_LIBRARY` selects a different SQLite library path. Absolute
@@ -241,7 +264,8 @@ spotify-music-recommender/
 │   ├── studio.py               # playlist controls and sound comparison
 │   ├── export.py               # spreadsheet-friendly playlist export
 │   ├── profile_ui.py           # manual taste selection
-│   ├── spotify.py              # read-only PKCE and library API
+│   ├── spotify.py              # PKCE, library API and opt-in private exports
+│   ├── spotify_export_ui.py    # export preview, confirmation and result
 │   └── model.py                # features, similarity, ranking
 ├── tests/
 ├── app.py
@@ -266,7 +290,6 @@ instances. See [Playlist Studio design](docs/playlist-studio.md) for acceptance 
 ## Roadmap
 
 - Learn feature weights from likes/dislikes
-- Add optional write-scoped Spotify playlist creation after explicit user consent
 - Package the model behind a FastAPI service
 
 ## License

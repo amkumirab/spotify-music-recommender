@@ -12,7 +12,8 @@ latter when release dates are available.
 1. Catalog: merge a pinned real Kaggle chart snapshot with the existing audio
    catalog, retain source attribution, dates and a reproducible manifest.
 2. Spotify: Authorization Code with PKCE and a loopback callback; read-only
-   `user-library-read` scope, paginated saved tracks and token refresh.
+   `user-library-read` scope by default, paginated saved tracks and token refresh.
+   Optional [private playlist export](spotify-export.md) requests separate write permission.
 3. Discovery: match by exact Spotify ID, then exact normalized title + primary
    artist for relinked versions. Report unmatched items; exclude every liked ID
    and known matching versions from recommendations. Choose up to 50 recent
@@ -27,12 +28,13 @@ in caches, logs, SQLite, screenshots or Git. Callback listens only on 127.0.0.1,
 expires after five minutes, validates state and accepts one authorization result.
 Disconnect clears credentials and imported account data. API URLs are fixed;
 pagination offsets are generated locally. Rate limits and access errors are
-shown without leaking token/error payloads. No library writes are requested.
+shown without leaking token/error payloads. Sync never requests library writes.
+Private playlist creation is opt-in and requires a separate export confirmation.
 Snapshots retain generated recommendations, not tokens or the complete library.
 
 Live login needs a user-owned Spotify app Client ID, registered redirect URI,
 eligible account and authorized-user access. Offline samples exercise the UI
-without pretending to be a connected account. Personal screenshots use demo data.
+without pretending to be a connected account. Published screenshots use demo data.
 
 ## Acceptance and verification
 

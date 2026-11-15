@@ -7,9 +7,12 @@
 3. `studio`: persistent session results, feedback, comparison charts, saved playlist access.
 
 The application stays local and uses the existing Python/Streamlit stack. No
-Spotify credentials or new runtime dependencies are required. Library data belongs
+Spotify credentials or new runtime dependencies are required for offline use. Library data belongs
 in `data/local/` and is excluded from Git. This is a single-user desktop app;
 deployments must isolate each user's storage before enabling shared hosting.
+
+Optional account integration is covered by [Liked Songs discovery](spotify-discovery.md)
+and [private Spotify export](spotify-export.md). Local snapshots do not write to Spotify.
 
 ## Acceptance criteria
 
