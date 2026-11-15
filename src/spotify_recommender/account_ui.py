@@ -17,6 +17,22 @@ def _import_likes(likes: list[dict], tracks: pd.DataFrame, source: str) -> None:
     st.session_state.profile_source = "My imported likes"
 
 
+def _start_connection(client_id: str, allow_export: bool = False) -> None:
+    old = st.session_state.pop("spotify_login", None)
+    if old is not None:
+        old.close()
+    try:
+        st.session_state.spotify_login = (
+            LoginAttempt(client_id.strip(), allow_playlist_export=True)
+            if allow_export else LoginAttempt(client_id.strip())
+        )
+    except (ValueError, OSError) as error:
+        st.error(
+            str(error) if isinstance(error, ValueError)
+            else "Port 8000 is busy. Close other connection attempts."
+        )
+
+
 def render_account(tracks: pd.DataFrame) -> None:
     with st.sidebar:
         st.header("Your Spotify library")
@@ -39,35 +55,24 @@ def render_account(tracks: pd.DataFrame) -> None:
                     value=os.environ.get("SPOTIFY_CLIENT_ID", ""),
                     key="spotify_client_id",
                 )
+                allow_export = st.checkbox(
+                    "Allow saving private playlists", key="allow_spotify_export",
+                    help="Optional playlist-modify-private permission. No public playlists.",
+                )
                 if st.button("Start Spotify connection", key="start_spotify"):
-                    old = st.session_state.pop("spotify_login", None)
-                    if old is not None:
-                        old.close()
-                    try:
-                        st.session_state.spotify_login = LoginAttempt(client_id.strip())
-                    except (ValueError, OSError) as error:
-                        st.error(
-                            str(error)
-                            if isinstance(error, ValueError)
-                            else "Port 8000 is busy. Close other connection attempts."
-                        )
-                attempt = st.session_state.get("spotify_login")
-                if attempt is not None:
-                    st.link_button("Sign in on Spotify", attempt.url)
-                    if st.button("Finish connection", key="finish_spotify"):
-                        try:
-                            st.session_state.spotify_client = attempt.finish()
-                        except SpotifyError as error:
-                            st.error(str(error))
-                        else:
-                            attempt.close()
-                            del st.session_state.spotify_login
-                            st.rerun()
+                    _start_connection(client_id, allow_export)
                 st.caption(
-                    "Read-only access. Passwords stay on Spotify. Tokens stay in this session."
+                    "Read-only by default. Passwords stay on Spotify. Tokens stay in this session."
                 )
         else:
-            st.success("Spotify connected · read-only")
+            st.success(
+                "Spotify connected · private playlist saving enabled"
+                if getattr(client, "can_export", False) else "Spotify connected · read-only"
+            )
+            if not getattr(client, "can_export", False):
+                st.caption("Saving to Spotify needs optional private playlist permission.")
+                if st.button("Enable private playlist saving", key="enable_spotify_export"):
+                    _start_connection(getattr(client, "client_id", ""), True)
             if st.button("Sync Liked Songs", key="sync_likes", type="primary"):
                 try:
                     with st.spinner("Reading your library and matching the catalog..."):
@@ -75,12 +80,27 @@ def render_account(tracks: pd.DataFrame) -> None:
                 except SpotifyError as error:
                     st.error(str(error))
             if st.button("Disconnect and clear imported likes", key="disconnect_spotify"):
+                attempt = st.session_state.pop("spotify_login", None)
+                if attempt is not None:
+                    attempt.close()
                 for key in ("spotify_client", "library_report", "library_source"):
                     st.session_state.pop(key, None)
                 st.session_state.playlist = None
                 st.session_state.playlist_settings = {}
                 st.session_state.profile_source = "Selected tracks"
                 st.rerun()
+        attempt = st.session_state.get("spotify_login")
+        if attempt is not None:
+            st.link_button("Sign in on Spotify", attempt.url)
+            if st.button("Finish connection", key="finish_spotify"):
+                try:
+                    st.session_state.spotify_client = attempt.finish()
+                except SpotifyError as error:
+                    st.error(str(error))
+                else:
+                    attempt.close()
+                    del st.session_state.spotify_login
+                    st.rerun()
         with st.expander("No account setup? Paste track links"):
             st.caption(
                 "In Spotify Desktop, select tracks in Liked Songs and copy. Paste their track "

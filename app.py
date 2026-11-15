@@ -11,6 +11,7 @@ from spotify_recommender.account_ui import render_account
 from spotify_recommender.data import load_tracks
 from spotify_recommender.model import ContentBasedRecommender
 from spotify_recommender.profile_ui import render_manual_profile
+from spotify_recommender.spotify_export_ui import render_spotify_export
 from spotify_recommender.studio import render_library, render_playlist
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -49,7 +50,7 @@ model = get_model(str(path), revision)
 
 st.title("🎧 Playlist Studio")
 st.caption("Your taste. Songs you haven't saved yet. Discover your next favourites.")
-st.caption("Offline audio catalog + optional read-only Spotify Liked Songs connection.")
+st.caption("Offline audio catalog + optional Spotify connection and private playlist saving.")
 if path in (UPDATED_DATASET, SAMPLE_DATASET):
     st.caption(
         "Catalog snapshot: 11 June 2025 · includes 2025 releases · "
@@ -176,6 +177,7 @@ with results_column:
         )
         st.session_state.playlist_settings = settings
     render_playlist(tracks, settings)
+    render_spotify_export()
     render_library(os.environ.get("SPOTIFY_LIBRARY", str(PROJECT_ROOT / "data/local/library.db")))
 
 with st.expander("How does it work?"):
