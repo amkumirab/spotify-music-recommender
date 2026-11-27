@@ -11,6 +11,7 @@ isolating each user's data.
 | Imported Liked Songs and match report | Session memory | No |
 | Spotify export outcomes and playlist IDs | Connection memory | No |
 | Explicitly saved recommendation snapshots | `data/local/library.db` | No |
+| Explicit track feedback (track ID and rating direction) | `data/local/library.db` | No |
 | Personal screenshots from local testing | `data/local/` | No |
 | Public demo screenshots | `docs/images/` | Yes |
 | Attributed public catalog sample and manifest | `data/sample/`, `data/catalog_manifest.json` | Yes |
@@ -19,6 +20,11 @@ Disconnect clears the connection, imported taste and current result. Explicitly
 saved recommendation snapshots remain on the device. Restarting the app process
 clears in-memory credentials. Local disconnection does not revoke Spotify-side
 authorization; use Spotify's account Apps settings to revoke it.
+
+Recommendation feedback also stays on the device across disconnects and
+restarts. It is shared by sessions using the same local database, not linked to
+a Spotify account. Ratings are never sent to Spotify. Disable their use or
+remove individual ratings in **Recommendation feedback**.
 
 The default permission only reads Liked Songs. Enabling private playlist saving
 adds `playlist-modify-private`. After you review and confirm an export, Spotify

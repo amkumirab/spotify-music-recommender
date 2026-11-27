@@ -24,6 +24,29 @@ class PlaylistLibrary:
                 "id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, "
                 "track_count INTEGER NOT NULL, tracks TEXT NOT NULL, settings TEXT NOT NULL)"
             )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS track_feedback ("
+                "track_id TEXT NOT NULL PRIMARY KEY, "
+                "rating INTEGER NOT NULL CHECK (rating IN (-1, 1)))"
+            )
+
+    def list_feedback(self) -> dict[str, int]:
+        with closing(sqlite3.connect(self.path)) as connection:
+            return dict(connection.execute("SELECT track_id, rating FROM track_feedback"))
+
+    def set_feedback(self, track_id: str, rating: int) -> None:
+        if not track_id.strip() or type(rating) is not int or rating not in {-1, 1}:
+            raise ValueError("Feedback requires a track ID and a rating of -1 or 1")
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute(
+                "INSERT INTO track_feedback (track_id, rating) VALUES (?, ?) "
+                "ON CONFLICT(track_id) DO UPDATE SET rating = excluded.rating",
+                (track_id, rating),
+            )
+
+    def clear_feedback(self, track_id: str) -> None:
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute("DELETE FROM track_feedback WHERE track_id = ?", (track_id,))
 
     def save(self, name: str, tracks: pd.DataFrame, settings: dict) -> str:
         name = name.strip()

@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import os
+import sqlite3
+from hashlib import sha256
 from pathlib import Path
 
 import streamlit as st
 
 from spotify_recommender.account_ui import render_account
 from spotify_recommender.data import load_tracks
+from spotify_recommender.library import PlaylistLibrary
 from spotify_recommender.model import ContentBasedRecommender
 from spotify_recommender.profile_ui import render_manual_profile
 from spotify_recommender.spotify_export_ui import render_spotify_export
-from spotify_recommender.studio import render_library, render_playlist
+from spotify_recommender.studio import render_feedback_controls, render_library, render_playlist
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 FULL_DATASET = PROJECT_ROOT / "data" / "raw" / "spotify-tracks-dataset-detailed.csv"
@@ -73,6 +76,12 @@ for key, default in {
         st.session_state[key] = default
 render_account(tracks)
 controls, results_column = st.columns([1, 2], gap="large")
+library_path = os.environ.get("SPOTIFY_LIBRARY", str(PROJECT_ROOT / "data/local/library.db"))
+try:
+    library = PlaylistLibrary(library_path)
+    feedback = library.list_feedback()
+except (sqlite3.Error, OSError):
+    library, feedback = None, {}
 
 with controls:
     st.subheader("Build your taste profile")
@@ -134,6 +143,7 @@ with controls:
         if st.button("Restore hidden tracks", key="restore_hidden"):
             st.session_state.excluded_track_ids = []
             st.rerun()
+    use_feedback = render_feedback_controls(tracks, library, feedback)
     active_seeds = (
         report.get("seed_ids", [])
         if source == "My imported likes"
@@ -158,6 +168,10 @@ settings = {
     "same_genre": same_genre,
     "audio_ranges": {key: list(value) for key, value in audio_ranges.items()},
 }
+active_feedback = feedback if use_feedback else {}
+if active_feedback:
+    feedback_bytes = repr(sorted(active_feedback.items())).encode()
+    settings["feedback_revision"] = sha256(feedback_bytes).hexdigest()
 with results_column:
     st.subheader("Your playlist")
     if recommend:
@@ -174,11 +188,15 @@ with results_column:
                 *report.get("excluded_ids", []),
             ],
             minimum_release_year=minimum_year,
+            feedback=active_feedback,
         )
         st.session_state.playlist_settings = settings
-    render_playlist(tracks, settings)
+    render_playlist(tracks, settings, library, feedback)
     render_spotify_export()
-    render_library(os.environ.get("SPOTIFY_LIBRARY", str(PROJECT_ROOT / "data/local/library.db")))
+    if library is None:
+        st.warning("Local storage is unavailable. You can still build and download playlists.")
+    else:
+        render_library(library)
 
 with st.expander("How does it work?"):
     st.write(

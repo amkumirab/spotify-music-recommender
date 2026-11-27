@@ -167,6 +167,19 @@ saved playlists are shared by users of the same running installation. A hosted
 multi-user deployment needs authentication and isolated user storage first.
 Saving locally does not create playlists in a Spotify account.
 
+### Personalize the next playlist
+
+Choose **More Like This** or **Less Like This** on a recommended track. The
+current playlist stays as it is. Build again to gently boost or penalize similar
+tracks while keeping the existing filters, diversity settings, and seed profile.
+**Hide track** remains a separate, session-only action.
+
+Ratings stay in your local SQLite library across restarts. Use **Undo rating**
+on a track, or remove older ratings under **Recommendation feedback**. To compare
+results, uncheck **Use my feedback** and rebuild with the same settings; this does
+not delete ratings. No Spotify connection or extra permission is needed.
+See [recommendation feedback](docs/recommendation-feedback.md) for the ranking details.
+
 ### Save directly to Spotify
 
 1. In the sidebar, choose **Allow saving private playlists** before connecting.
@@ -289,7 +302,7 @@ instances. See [Playlist Studio design](docs/playlist-studio.md) for acceptance 
 
 ## Roadmap
 
-- Learn feature weights from likes/dislikes
+- Evaluate whether feedback improves recommendations across repeated listening sessions
 - Package the model behind a FastAPI service
 
 ## License

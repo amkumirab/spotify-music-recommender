@@ -23,6 +23,7 @@ AUDIO_FEATURES = [
     "tempo",
 ]
 UNKNOWN_GENRES = {"unclassified", "unknown", ""}
+FEEDBACK_WEIGHT = 0.15
 
 FEATURE_LABELS = {
     "danceability": "danceability",
@@ -110,11 +111,13 @@ class ContentBasedRecommender:
         audio_ranges: Mapping[str, tuple[float, float]] | None = None,
         excluded_track_ids: Sequence[str] = (),
         minimum_release_year: int | None = None,
+        feedback: Mapping[str, int] | None = None,
     ) -> pd.DataFrame:
         """Recommend from a combined profile of one or more seed tracks.
 
         Candidate relevance is calculated against the mean seed vector. Maximum
         Marginal Relevance (MMR) then balances that relevance with result diversity.
+        Explicit local ratings optionally adjust ranking without changing seed similarity.
         """
         if self.tracks is None or self.matrix is None:
             raise RuntimeError("Call fit() before recommend()")
@@ -164,13 +167,17 @@ class ContentBasedRecommender:
                 raise ValueError(f"Invalid range for {feature}: {bounds}")
             eligible &= self.tracks[feature].between(low, high)
         eligible_positions = np.flatnonzero(eligible.to_numpy())
+        eligible_vectors = self.matrix[eligible_positions]
         similarities = (
-            cosine_similarity(profile, self.matrix[eligible_positions]).ravel()
-            if len(eligible_positions)
-            else np.array([])
+            cosine_similarity(profile, eligible_vectors).ravel()
+            if len(eligible_positions) else np.array([])
+        )
+        adjustment = (
+            self._feedback_adjustment(self.matrix, eligible_vectors, feedback)
+            if feedback and len(eligible_positions) else np.zeros_like(similarities)
         )
         pool_size = min(len(eligible_positions), max(200, n_recommendations * 30))
-        order = np.argsort(-similarities, kind="stable")[:pool_size]
+        order = np.argsort(-(similarities + adjustment), kind="stable")[:pool_size]
         candidates = self.tracks.iloc[eligible_positions[order]].copy()
         candidates["_matrix_position"] = candidates.index.astype(int)
         candidates["similarity"] = similarities[order]
@@ -178,7 +185,7 @@ class ContentBasedRecommender:
         popularity = candidates["popularity"].clip(0, 100) / 100
         candidates["score"] = (1 - popularity_bias) * candidates[
             "similarity"
-        ] + popularity_bias * popularity
+        ] + popularity_bias * popularity + adjustment[order]
         candidates = candidates.sort_values("score", ascending=False).drop_duplicates(
             subset=["track_name", "artists"], keep="first"
         )
@@ -204,6 +211,26 @@ class ContentBasedRecommender:
             "reason",
         ]
         return candidates[columns].reset_index(drop=True)
+
+    def _feedback_adjustment(
+        self,
+        matrix: sparse.csr_matrix,
+        candidates: sparse.csr_matrix,
+        feedback: Mapping[str, int],
+    ) -> np.ndarray:
+        """Compare against at most two profiles, not every rated track per candidate."""
+        adjustment = np.zeros(candidates.shape[0])
+        for direction in (1, -1):
+            positions = [
+                self._track_positions[track_id]
+                for track_id, rating in sorted(feedback.items())
+                if rating == direction and track_id in self._track_positions
+            ]
+            if positions:
+                profile = sparse.csr_matrix(matrix[positions].mean(axis=0))
+                similarity = cosine_similarity(profile, candidates).ravel().clip(0, 1)
+                adjustment += direction * FEEDBACK_WEIGHT * similarity
+        return adjustment
 
     def _select_diverse(
         self,

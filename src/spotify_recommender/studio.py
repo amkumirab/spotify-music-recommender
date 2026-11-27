@@ -11,8 +11,59 @@ import streamlit as st
 from spotify_recommender.export import build_playlist_export
 from spotify_recommender.library import PlaylistLibrary
 
+FEEDBACK_LABELS = {1: "More Like This", -1: "Less Like This"}
 
-def render_playlist(tracks: pd.DataFrame, settings: dict) -> None:
+
+def _save_feedback(library: PlaylistLibrary, track_id: str, rating: int | None) -> None:
+    try:
+        if rating is None:
+            library.clear_feedback(track_id)
+        else:
+            library.set_feedback(track_id, rating)
+    except (sqlite3.Error, OSError, ValueError):
+        st.warning("Could not update local feedback. Please try again.")
+    else:
+        st.rerun()
+
+
+def render_feedback_controls(
+    tracks: pd.DataFrame, library: PlaylistLibrary | None, feedback: dict[str, int]
+) -> bool:
+    if library is None:
+        return False
+    with st.expander("Recommendation feedback"):
+        use_feedback = st.checkbox("Use my feedback", value=True, key="use_feedback")
+        st.caption(
+            "Feedback is saved on this device and used the next time you build a playlist. "
+            "Turn it off to compare results without clearing your ratings."
+        )
+        if not feedback:
+            st.caption("Rate a track in your playlist to get started.")
+            return use_feedback
+        rated_tracks = tracks.loc[tracks["track_id"].isin(feedback)]
+        labels = {
+            row.track_id: f"{row.track_name} · {row.artists}"
+            for row in rated_tracks.itertuples(index=False)
+        }
+
+        def label(track_id: str) -> str:
+            name = labels.get(track_id, f"{track_id} (not in the current catalog)")
+            return f"{name} · {FEEDBACK_LABELS[feedback[track_id]]}"
+
+        selected = st.selectbox(
+            "Saved rating", sorted(feedback, key=label), format_func=label, key="feedback_track"
+        )
+        if selected is not None and st.button("Undo saved rating", key="undo_saved_feedback"):
+            _save_feedback(library, selected, None)
+        return use_feedback
+
+
+def render_playlist(
+    tracks: pd.DataFrame,
+    settings: dict,
+    library: PlaylistLibrary | None,
+    feedback: dict[str, int],
+) -> None:
     playlist = st.session_state.playlist
     if playlist is None:
         st.info("Add a few tracks, adjust the controls, then build your playlist.")
@@ -41,7 +92,7 @@ def render_playlist(tracks: pd.DataFrame, settings: dict) -> None:
         st.caption(
             "Copy the URI list for a playlist importer, or open individual songs above. "
             "Bulk paste support varies between Spotify Desktop versions. "
-            "This app does not write to your Spotify account."
+            "Downloading the list does not write to your Spotify account."
         )
         uri_text = "\n".join("spotify:track:" + str(track_id) for track_id in playlist["track_id"])
         st.code(uri_text, language=None)
@@ -73,6 +124,18 @@ def render_playlist(tracks: pd.DataFrame, settings: dict) -> None:
                         playlist["track_id"].ne(row["track_id"])
                     ].reset_index(drop=True)
                     st.rerun()
+                if library is not None and not metadata.empty:
+                    track_id = str(row["track_id"])
+                    if track_id in feedback:
+                        st.caption(f"Rated: {FEEDBACK_LABELS[feedback[track_id]]}")
+                        if st.button("Undo rating", key=f"feedback-undo-{track_id}"):
+                            _save_feedback(library, track_id, None)
+                    else:
+                        more, less = st.columns(2)
+                        if more.button(FEEDBACK_LABELS[1], key=f"feedback-more-{track_id}"):
+                            _save_feedback(library, track_id, 1)
+                        if less.button(FEEDBACK_LABELS[-1], key=f"feedback-less-{track_id}"):
+                            _save_feedback(library, track_id, -1)
     with analysis_tab:
         features = ["energy", "valence", "danceability", "acousticness", "instrumentalness"]
         selected = tracks[tracks["track_id"].isin(playlist["track_id"])]
@@ -111,9 +174,8 @@ def render_playlist(tracks: pd.DataFrame, settings: dict) -> None:
     st.text_input("Playlist name", max_chars=100, key="playlist_name")
 
 
-def render_library(path: str) -> None:
+def render_library(library: PlaylistLibrary) -> None:
     try:
-        library = PlaylistLibrary(path)
         if st.button(
             "Save playlist locally",
             key="save_playlist",
